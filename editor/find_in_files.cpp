@@ -36,6 +36,7 @@
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
 #include "editor/themes/editor_scale.h"
+#include "modules/regex/regex.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
 #include "scene/gui/check_box.h"
@@ -54,17 +55,26 @@ inline void pop_back(T &container) {
 	container.resize(container.size() - 1);
 }
 
-static bool find_next(const String &line, const String &pattern, int from, bool match_case, bool whole_words, int &out_begin, int &out_end) {
+static bool find_next(const String &line, const String &pattern, int from, bool match_case, bool whole_words, RegEx *re, int &out_begin, int &out_end) {
 	int end = from;
 
 	while (true) {
-		int begin = match_case ? line.find(pattern, end) : line.findn(pattern, end);
-
-		if (begin == -1) {
-			return false;
+		int begin;
+		if (re) {
+			Ref<RegExMatch> match = re->search(line, end);
+			if (match.is_null()) {
+				return false;
+			}
+			begin = match->get_start(0);
+			end = match->get_end(0);
+		} else {
+			begin = match_case ? line.find(pattern, end) : line.findn(pattern, end);
+			if (begin == -1) {
+				return false;
+			}
+			end = begin + pattern.length();
 		}
 
-		end = begin + pattern.length();
 		out_begin = begin;
 		out_end = end;
 
@@ -81,6 +91,30 @@ static bool find_next(const String &line, const String &pattern, int from, bool 
 	}
 }
 
+// Same as get_line, but preserves line ending characters.
+class ConservativeGetLine {
+public:
+	String get_line(Ref<FileAccess> f) {
+		_line_buffer.clear();
+
+		char32_t c = f->get_8();
+
+		while (!f->eof_reached() && c > 0) {
+			_line_buffer.push_back(c);
+			if (c == '\n') {
+				break;
+			}
+			c = f->get_8();
+		}
+
+		_line_buffer.push_back(0);
+		return String::utf8(_line_buffer.ptr());
+	}
+
+private:
+	Vector<char> _line_buffer;
+};
+
 //--------------------------------------------------------------------------------
 
 void FindInFiles::set_search_text(const String &p_pattern) {
@@ -93,6 +127,10 @@ void FindInFiles::set_whole_words(bool p_whole_word) {
 
 void FindInFiles::set_match_case(bool p_match_case) {
 	_match_case = p_match_case;
+}
+
+void FindInFiles::set_regex(bool p_regex) {
+	_regex = p_regex;
 }
 
 void FindInFiles::set_folder(const String &folder) {
@@ -114,6 +152,12 @@ void FindInFiles::_notification(int p_what) {
 void FindInFiles::start() {
 	if (_pattern.is_empty()) {
 		print_verbose("Nothing to search, pattern is empty");
+		emit_signal(SceneStringName(finished));
+		return;
+	}
+	RegEx re;
+	if (_regex && re.compile(_pattern) != OK) {
+		print_verbose("Invalid regex in search pattern: " + re.get_compile_error());
 		emit_signal(SceneStringName(finished));
 		return;
 	}
@@ -267,18 +311,41 @@ void FindInFiles::_scan_file(const String &fpath) {
 	}
 
 	int line_number = 0;
+	RegEx re;
+	if (_regex) {
+		Error err = re.compile(_pattern, true, !_match_case);
+		// The caller should've handled this, but just in case
+		ERR_FAIL_COND_MSG(err != OK, "Could not compile regular expression '" + _pattern + "': " + re.get_compile_error());
+	}
 
+	Vector<int> line_offsets;
+	String buffer;
+	ConservativeGetLine conservative;
 	while (!f->eof_reached()) {
-		// Line number starts at 1.
-		++line_number;
+		line_offsets.push_back(buffer.length());
+		buffer += conservative.get_line(f);
+	}
 
-		int begin = 0;
-		int end = 0;
+	int match_begin = 0;
+	int match_end = 0;
 
-		String line = f->get_line();
+	while (find_next(buffer, _pattern, match_end, _match_case, _whole_words, _regex ? &re : nullptr, match_begin, match_end)) {
+		while (line_number + 1 < line_offsets.size() && line_offsets[line_number + 1] <= match_begin) {
+			++line_number;
+		}
+		int end_line = line_number;
+		while (end_line + 1 < line_offsets.size() && line_offsets[end_line + 1] < match_end) {
+			++end_line;
+		}
 
-		while (find_next(line, _pattern, end, _match_case, _whole_words, begin, end)) {
-			emit_signal(SNAME(SIGNAL_RESULT_FOUND), fpath, line_number, begin, end, line);
+		int display_begin = line_offsets[line_number];
+		int display_end = end_line + 1 < line_offsets.size() ? line_offsets[end_line + 1] : buffer.length();
+		String display_lines = buffer.substr(display_begin, display_end - display_begin);
+		emit_signal(SNAME(SIGNAL_RESULT_FOUND), fpath, line_number + 1, match_begin - display_begin, match_end - display_begin, display_lines);
+
+		line_number = end_line;
+		if (match_begin == match_end) {
+			++match_end;
 		}
 	}
 }
@@ -334,6 +401,14 @@ FindInFilesDialog::FindInFilesDialog() {
 	_replace_text_line_edit->hide();
 	gc->add_child(_replace_text_line_edit);
 
+	_error_spacer = memnew(Control);
+	_error_spacer->set_visible(false);
+	gc->add_child(_error_spacer);
+	_error_label = memnew(Label);
+	_error_label->add_theme_color_override(SceneStringName(font_color), EditorNode::get_singleton()->get_editor_theme()->get_color(SNAME("error_color"), EditorStringName(Editor)));
+	_error_label->set_visible(false);
+	gc->add_child(_error_label);
+
 	gc->add_child(memnew(Control)); // Space to maintain the grid alignment.
 
 	{
@@ -346,6 +421,10 @@ FindInFilesDialog::FindInFilesDialog() {
 		_match_case_checkbox = memnew(CheckBox);
 		_match_case_checkbox->set_text(TTR("Match Case"));
 		hbc->add_child(_match_case_checkbox);
+
+		_regex_checkbox = memnew(CheckBox);
+		_regex_checkbox->set_text(TTR("Use Regular Expressions"));
+		hbc->add_child(_regex_checkbox);
 
 		gc->add_child(hbc);
 	}
@@ -399,19 +478,33 @@ FindInFilesDialog::FindInFilesDialog() {
 }
 
 void FindInFilesDialog::set_search_text(const String &text) {
+	const String pcre_metacharacters = "\\^$.[|()?*+{";
+	String escaped_text = text;
+	if (escaped_text.contains_char('\n')) {
+		_regex_checkbox->set_pressed(true);
+	}
+	if (_regex_checkbox->is_pressed()) {
+		for (int i = 0; i < escaped_text.length(); i++) {
+			if (pcre_metacharacters.contains_char(escaped_text[i])) {
+				escaped_text = escaped_text.insert(i++, "\\");
+			}
+		}
+		escaped_text = escaped_text.replace("\n", "\\n");
+		escaped_text = escaped_text.replace("\t", "\\t");
+	}
 	if (_mode == SEARCH_MODE) {
 		if (!text.is_empty()) {
-			_search_text_line_edit->set_text(text);
+			_search_text_line_edit->set_text(escaped_text);
 			_on_search_text_modified(text);
 		}
 		callable_mp((Control *)_search_text_line_edit, &Control::grab_focus).call_deferred();
 		_search_text_line_edit->select_all();
 	} else if (_mode == REPLACE_MODE) {
-		if (!text.is_empty()) {
-			_search_text_line_edit->set_text(text);
+		if (!escaped_text.is_empty()) {
+			_search_text_line_edit->set_text(escaped_text);
 			callable_mp((Control *)_replace_text_line_edit, &Control::grab_focus).call_deferred();
 			_replace_text_line_edit->select_all();
-			_on_search_text_modified(text);
+			_on_search_text_modified(escaped_text);
 		} else {
 			callable_mp((Control *)_search_text_line_edit, &Control::grab_focus).call_deferred();
 			_search_text_line_edit->select_all();
@@ -458,6 +551,10 @@ bool FindInFilesDialog::is_match_case() const {
 
 bool FindInFilesDialog::is_whole_words() const {
 	return _whole_words_checkbox->is_pressed();
+}
+
+bool FindInFilesDialog::is_regex() const {
+	return _regex_checkbox->is_pressed();
 }
 
 String FindInFilesDialog::get_folder() const {
@@ -510,11 +607,26 @@ void FindInFilesDialog::custom_action(const String &p_action) {
 		_filters_preferences[cb->get_text()] = cb->is_pressed();
 	}
 
+	StringName action = "";
 	if (p_action == "find") {
-		emit_signal(SNAME(SIGNAL_FIND_REQUESTED));
-		hide();
+		action = SNAME(SIGNAL_FIND_REQUESTED);
 	} else if (p_action == "replace") {
-		emit_signal(SNAME(SIGNAL_REPLACE_REQUESTED));
+		action = SNAME(SIGNAL_REPLACE_REQUESTED);
+	}
+	if (!action.is_empty()) {
+		_error_spacer->set_visible(false);
+		_error_label->set_visible(false);
+		_error_label->set_text("");
+		if (_regex_checkbox->is_pressed()) {
+			RegEx re;
+			if (re.compile(get_search_text(), false) != OK) {
+				_error_label->set_text(re.get_compile_error());
+				_error_spacer->set_visible(true);
+				_error_label->set_visible(true);
+				return;
+			}
+		}
+		emit_signal(action);
 		hide();
 	}
 }
@@ -764,20 +876,43 @@ void FindInFilesPanel::_on_result_found(const String &fpath, int line_number, in
 	// Do this first because it resets properties of the cell...
 	item->set_cell_mode(text_index, TreeItem::CELL_MODE_CUSTOM);
 
-	// Trim result item line.
-	int old_text_size = text.size();
-	text = text.strip_edges(true, false);
-	int chars_removed = old_text_size - text.size();
-	String start = vformat("%3s: ", line_number);
+	PackedStringArray lines = text.trim_suffix("\n").split("\n");
 
-	item->set_text(text_index, start + text);
-	item->set_custom_draw_callback(text_index, callable_mp(this, &FindInFilesPanel::draw_result_text));
+	int minimum_left_padding = -1;
+	for (int i = 0; i < lines.size(); ++i) {
+		int stripped_length = lines[i].strip_edges(true, false).length();
+		int left_padding = lines[i].length() - stripped_length;
+		if (stripped_length > 0 && (minimum_left_padding < 0 || left_padding < minimum_left_padding)) {
+			minimum_left_padding = left_padding;
+		}
+	}
+	minimum_left_padding = MAX(0, minimum_left_padding);
+	int maximum_line_number = line_number + lines.size() - 1;
+	int minimum_line_number_size = vformat("%d", maximum_line_number).length();
+	minimum_line_number_size = MAX(3, minimum_line_number_size);
 
 	Result r;
 	r.line_number = line_number;
 	r.begin = begin;
 	r.end = end;
-	r.begin_trimmed = begin - chars_removed + start.size() - 1;
+	String formatted_text = "";
+	int trimmed_highlight_end = end;
+	for (int i = 0; i < lines.size(); ++i) {
+		r.line_begins.push_back(formatted_text.length());
+
+		String start = vformat(vformat("%%%ds: ", minimum_line_number_size), line_number + i);
+		int padding = MIN(minimum_left_padding, lines[i].length());
+		r.highlight_begins.push_back((i == 0 ? begin - padding : 0) + start.length());
+		r.highlight_ends.push_back((i == lines.size() - 1 ? trimmed_highlight_end : lines[i].length()) - padding + start.length());
+
+		formatted_text += start + lines[i].substr(padding) + (i == lines.size() - 1 ? "" : "\n");
+		r.end = trimmed_highlight_end;
+		trimmed_highlight_end -= lines[i].length() + 1;
+	}
+
+	item->set_text(text_index, formatted_text);
+	item->set_custom_draw_callback(text_index, callable_mp(this, &FindInFilesPanel::draw_result_text));
+
 	_result_items[item] = r;
 
 	if (_with_replace) {
@@ -788,6 +923,7 @@ void FindInFilesPanel::_on_result_found(const String &fpath, int line_number, in
 	} else {
 		item->add_button(0, remove_texture, -1, false, TTR("Remove result"));
 	}
+	item->set_autowrap_trim_flags(text_index, TextServer::BREAK_TRIM_END_EDGE_SPACES);
 }
 
 void FindInFilesPanel::draw_result_text(Object *item_obj, Rect2 rect) {
@@ -800,19 +936,62 @@ void FindInFilesPanel::draw_result_text(Object *item_obj, Rect2 rect) {
 	if (!E) {
 		return;
 	}
+
+	// Draw the highlight shapes
 	Result r = E->value;
 	String item_text = item->get_text(_with_replace ? 1 : 0);
+
 	Ref<Font> font = _results_display->get_theme_font(SceneStringName(font));
 	int font_size = _results_display->get_theme_font_size(SceneStringName(font_size));
+	float line_height = font->get_string_size("any", HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).y;
 
 	Rect2 match_rect = rect;
-	match_rect.position.x += font->get_string_size(item_text.left(r.begin_trimmed), HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x - 1;
-	match_rect.size.x = font->get_string_size(_search_text_label->get_text(), HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x + 1;
-	match_rect.position.y += 1 * EDSCALE;
-	match_rect.size.y -= 2 * EDSCALE;
+	match_rect.position.y += (rect.size.y - line_height * r.line_begins.size()) / 2;
+	match_rect.size.y = line_height;
 
-	_results_display->draw_rect(match_rect, get_theme_color(SNAME("accent_color"), EditorStringName(Editor)) * Color(1, 1, 1, 0.33), false, 2.0);
-	_results_display->draw_rect(match_rect, get_theme_color(SNAME("accent_color"), EditorStringName(Editor)) * Color(1, 1, 1, 0.17), true);
+	Color outline_color = get_theme_color(SNAME("accent_color"), EditorStringName(Editor)) * Color(1, 1, 1, 0.33);
+	Color highlight_color = get_theme_color(SNAME("accent_color"), EditorStringName(Editor)) * Color(1, 1, 1, 0.17);
+	float line_width = 2.0;
+
+	Vector2 prev_left_point, prev_right_point;
+	for (int i = 0; i < r.line_begins.size(); ++i) {
+		String prefix_text = item_text.left(r.line_begins[i] + r.highlight_begins[i]).substr(r.line_begins[i]);
+		String highlight_text = item_text.left(r.line_begins[i] + r.highlight_ends[i]).substr(r.line_begins[i] + r.highlight_begins[i]);
+
+		match_rect.position.x = rect.position.x + font->get_string_size(prefix_text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x;
+		match_rect.size.x = font->get_string_size(highlight_text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x;
+		_results_display->draw_rect(match_rect, highlight_color, true);
+
+		Vector<Vector2> left_points;
+		Vector<Vector2> right_points;
+		if (i == 0 || prev_right_point.x < match_rect.position.x || prev_left_point.x > match_rect.get_end().x) {
+			right_points.append(match_rect.position);
+			if (i > 0) {
+				_results_display->draw_line(prev_left_point, prev_right_point, outline_color, line_width);
+			}
+		} else {
+			left_points.append(prev_left_point);
+			left_points.append(Vector2(prev_left_point.x, match_rect.position.y));
+			right_points.append(prev_right_point);
+			right_points.append(Vector2(prev_right_point.x, match_rect.position.y));
+		}
+
+		right_points.append(match_rect.position + Vector2(match_rect.size.x, 0));
+		prev_right_point = match_rect.get_end();
+		right_points.append(prev_right_point);
+
+		left_points.append(match_rect.position);
+		prev_left_point = Vector2(match_rect.position.x, prev_right_point.y);
+		left_points.append(prev_left_point);
+
+		_results_display->draw_polyline(left_points, outline_color, line_width);
+		_results_display->draw_polyline(right_points, outline_color, line_width);
+
+		match_rect.position.y += line_height;
+	}
+	if (r.line_begins.size() > 0) {
+		_results_display->draw_line(prev_left_point, prev_right_point, outline_color, line_width);
+	}
 
 	// Text is drawn by Tree already.
 }
@@ -860,7 +1039,9 @@ void FindInFilesPanel::_on_result_selected() {
 	TreeItem *file_item = item->get_parent();
 	String fpath = file_item->get_metadata(0);
 
-	emit_signal(SNAME(SIGNAL_RESULT_SELECTED), fpath, r.line_number, r.begin, r.end);
+	int end_line = r.line_number + r.line_begins.size() - 1;
+
+	emit_signal(SNAME(SIGNAL_RESULT_SELECTED), fpath, r.line_number, r.begin, end_line, r.end);
 }
 
 void FindInFilesPanel::_on_replace_text_changed(const String &text) {
@@ -926,39 +1107,6 @@ void FindInFilesPanel::_on_button_clicked(TreeItem *p_item, int p_column, int p_
 	update_matches_text();
 }
 
-// Same as get_line, but preserves line ending characters.
-class ConservativeGetLine {
-public:
-	String get_line(Ref<FileAccess> f) {
-		_line_buffer.clear();
-
-		char32_t c = f->get_8();
-
-		while (!f->eof_reached()) {
-			if (c == '\n') {
-				_line_buffer.push_back(c);
-				_line_buffer.push_back(0);
-				return String::utf8(_line_buffer.ptr());
-
-			} else if (c == '\0') {
-				_line_buffer.push_back(c);
-				return String::utf8(_line_buffer.ptr());
-
-			} else if (c != '\r') {
-				_line_buffer.push_back(c);
-			}
-
-			c = f->get_8();
-		}
-
-		_line_buffer.push_back(0);
-		return String::utf8(_line_buffer.ptr());
-	}
-
-private:
-	Vector<char> _line_buffer;
-};
-
 void FindInFilesPanel::apply_replaces_in_file(const String &fpath, const Vector<Result> &locations, const String &new_text) {
 	// If the file is already open, I assume the editor will reload it.
 	// If there are unsaved changes, the user will be asked on focus,
@@ -968,44 +1116,74 @@ void FindInFilesPanel::apply_replaces_in_file(const String &fpath, const Vector<
 	ERR_FAIL_COND_MSG(f.is_null(), "Cannot open file from path '" + fpath + "'.");
 
 	String buffer;
-	int current_line = 1;
-
 	ConservativeGetLine conservative;
-
-	String line = conservative.get_line(f);
 	String search_text = _finder->get_search_text();
 
-	int offset = 0;
+	// Only used for RegEx
+	RegEx re;
+	bool is_regex = _finder->is_regex();
+	if (is_regex) {
+		Error re_err = re.compile(_finder->get_search_text(), true, !_finder->is_match_case());
+		// This shouldn't ever happen since it's the dialog's responsibility to check
+		ERR_FAIL_COND_MSG(re_err != OK, "Could not compile regular expression '" + _finder->get_search_text() + "': " + re.get_compile_error());
+	}
 
-	for (int i = 0; i < locations.size(); ++i) {
-		int repl_line_number = locations[i].line_number;
+	// Only used for single line search
+	int current_line = 1;
 
-		while (current_line < repl_line_number) {
-			buffer += line;
-			line = conservative.get_line(f);
-			++current_line;
-			offset = 0;
+	String line;
+	// Regex searches support lookahead, so we can't know how much of the file
+	// we need to buffer to find all capture groups and all of it must be preloaded.
+	// This results in slower replaces in large files, so we only do it for regexes.
+	bool fully_buffered = is_regex;
+	Vector<int> line_offsets;
+	if (fully_buffered) {
+		while (!f->eof_reached()) {
+			line_offsets.push_back(buffer.length());
+			buffer += conservative.get_line(f);
 		}
+		line = buffer;
+	} else {
+		line = conservative.get_line(f);
+	}
 
-		int repl_begin = locations[i].begin + offset;
-		int repl_end = locations[i].end + offset;
-
-		int _;
-		if (!find_next(line, search_text, repl_begin, _finder->is_match_case(), _finder->is_whole_words(), _, _)) {
+	for (int i = locations.size() - 1; i >= 0; --i) {
+		int line_number = locations[i].line_number;
+		int begin_col = locations[i].begin;
+		int end_col = locations[i].end;
+		if (fully_buffered) {
+			begin_col += line_offsets[line_number - 1];
+			end_col += line_offsets[line_number + locations[i].line_begins.size() - 2];
+		} else {
+			while (current_line < line_number) {
+				buffer += line;
+				line = conservative.get_line(f);
+				++current_line;
+			}
+		}
+		int safety_check_begin, safety_check_end;
+		bool found = find_next(line, search_text, begin_col, _finder->is_match_case(), _finder->is_whole_words(), is_regex ? &re : nullptr, safety_check_begin, safety_check_end);
+		if (!found || safety_check_begin != begin_col || safety_check_end != end_col) {
 			// Make sure the replace is still valid in case the file was tampered with.
-			print_verbose(String("Occurrence no longer matches, replace will be ignored in {0}: line {1}, col {2}").format(varray(fpath, repl_line_number, repl_begin)));
+			print_verbose(String("Occurrence no longer matches, replace will be ignored in {0}: line {1}, col {2}").format(varray(fpath, line_number, begin_col)));
 			continue;
 		}
 
-		line = line.left(repl_begin) + new_text + line.substr(repl_end);
-		// Keep an offset in case there are successive replaces in the same line.
-		offset += new_text.length() - (repl_end - repl_begin);
+		if (is_regex) {
+			line = re.sub(line, new_text, false, begin_col, end_col, true);
+		} else {
+			line = line.left(begin_col) + new_text + line.substr(end_col);
+		}
 	}
 
-	buffer += line;
+	if (fully_buffered) {
+		buffer = line;
+	} else {
+		buffer += line;
 
-	while (!f->eof_reached()) {
-		buffer += conservative.get_line(f);
+		while (!f->eof_reached()) {
+			buffer += conservative.get_line(f);
+		}
 	}
 
 	// Now the modified contents are in the buffer, rewrite the file with our changes.

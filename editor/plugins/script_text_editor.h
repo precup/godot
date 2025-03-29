@@ -238,7 +238,7 @@ public:
 	virtual void tag_saved_version() override;
 
 	virtual void goto_line(int p_line, int p_column = 0) override;
-	void goto_line_selection(int p_line, int p_begin, int p_end);
+	void goto_line_selection(int p_begin_line, int p_begin_column, int p_end_line, int p_end_column);
 	void goto_line_centered(int p_line, int p_column = 0);
 	virtual void set_executing_line(int p_line) override;
 	virtual void clear_executing_line() override;

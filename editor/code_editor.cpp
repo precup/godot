@@ -1371,10 +1371,14 @@ void CodeTextEditor::goto_line(int p_line, int p_column) {
 	callable_mp((TextEdit *)text_editor, &TextEdit::adjust_viewport_to_caret).call_deferred(0);
 }
 
-void CodeTextEditor::goto_line_selection(int p_line, int p_begin, int p_end) {
+void CodeTextEditor::goto_line_selection(int p_begin_line, int p_begin_column, int p_end_line, int p_end_column) {
 	text_editor->remove_secondary_carets();
-	text_editor->unfold_line(CLAMP(p_line, 0, text_editor->get_line_count() - 1));
-	text_editor->select(p_line, p_begin, p_line, p_end);
+	p_begin_line = MAX(0, p_begin_line);
+	p_end_line = MIN(text_editor->get_line_count() - 1, p_end_line);
+	for (int line = p_begin_line; line <= p_end_line; line++) {
+		text_editor->unfold_line(line);
+	}
+	text_editor->select(p_begin_line, p_begin_column, p_end_line, p_end_column);
 	text_editor->set_code_hint("");
 	text_editor->cancel_code_completion();
 	callable_mp((TextEdit *)text_editor, &TextEdit::adjust_viewport_to_caret).call_deferred(0);

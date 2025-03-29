@@ -309,8 +309,8 @@ void TextEditor::goto_line(int p_line, int p_column) {
 	code_editor->goto_line(p_line, p_column);
 }
 
-void TextEditor::goto_line_selection(int p_line, int p_begin, int p_end) {
-	code_editor->goto_line_selection(p_line, p_begin, p_end);
+void TextEditor::goto_line_selection(int p_begin_line, int p_begin_column, int p_end_line, int p_end_column) {
+	code_editor->goto_line_selection(p_begin_line, p_begin_column, p_end_line, p_end_column);
 }
 
 void TextEditor::set_executing_line(int p_line) {

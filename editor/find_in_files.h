@@ -44,6 +44,7 @@ public:
 	void set_search_text(const String &p_pattern);
 	void set_whole_words(bool p_whole_word);
 	void set_match_case(bool p_match_case);
+	void set_regex(bool p_regex);
 	void set_folder(const String &folder);
 	void set_filter(const HashSet<String> &exts);
 
@@ -51,6 +52,7 @@ public:
 
 	bool is_whole_words() const { return _whole_words; }
 	bool is_match_case() const { return _match_case; }
+	bool is_regex() const { return _regex; }
 
 	void start();
 	void stop();
@@ -75,6 +77,7 @@ private:
 	String _root_dir;
 	bool _whole_words = true;
 	bool _match_case = true;
+	bool _regex = false;
 
 	// State
 	bool _searching = false;
@@ -113,6 +116,7 @@ public:
 	String get_replace_text() const;
 	bool is_match_case() const;
 	bool is_whole_words() const;
+	bool is_regex() const;
 	String get_folder() const;
 	HashSet<String> get_filter() const;
 
@@ -139,11 +143,14 @@ private:
 	LineEdit *_folder_line_edit = nullptr;
 	CheckBox *_match_case_checkbox = nullptr;
 	CheckBox *_whole_words_checkbox = nullptr;
+	CheckBox *_regex_checkbox = nullptr;
 	Button *_find_button = nullptr;
 	Button *_replace_button = nullptr;
 	FileDialog *_folder_dialog = nullptr;
 	HBoxContainer *_filters_container = nullptr;
 	HashMap<String, bool> _filters_preferences;
+	Label *_error_label = nullptr;
+	Control *_error_spacer = nullptr;
 };
 
 class Button;
@@ -191,7 +198,9 @@ private:
 		int line_number = 0;
 		int begin = 0;
 		int end = 0;
-		int begin_trimmed = 0;
+		PackedInt32Array highlight_begins;
+		PackedInt32Array highlight_ends;
+		PackedInt32Array line_begins;
 	};
 
 	void apply_replaces_in_file(const String &fpath, const Vector<Result> &locations, const String &new_text);

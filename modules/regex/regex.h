@@ -92,14 +92,15 @@ public:
 	static Ref<RegEx> create_from_string(const String &p_pattern, bool p_show_error = true);
 
 	void clear();
-	Error compile(const String &p_pattern, bool p_show_error = true);
+	Error compile(const String &p_pattern, bool p_show_error = true, bool p_caseless = false);
 
 	Ref<RegExMatch> search(const String &p_subject, int p_offset = 0, int p_end = -1) const;
 	TypedArray<RegExMatch> search_all(const String &p_subject, int p_offset = 0, int p_end = -1) const;
-	String sub(const String &p_subject, const String &p_replacement, bool p_all = false, int p_offset = 0, int p_end = -1) const;
+	String sub(const String &p_subject, const String &p_replacement, bool p_all = false, int p_offset = 0, int p_end = -1, bool p_extended = false) const;
 
 	bool is_valid() const;
 	String get_pattern() const;
+	String get_compile_error() const;
 	int get_group_count() const;
 	PackedStringArray get_names() const;
 

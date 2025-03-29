@@ -200,7 +200,7 @@ public:
 	bool get_trim_trailing_whitespace_on_save() const { return trim_trailing_whitespace_on_save; }
 	bool get_trim_final_newlines_on_save() const { return trim_final_newlines_on_save; }
 	void ensure_select_current();
-	void goto_line_selection(int p_line, int p_begin, int p_end);
+	void goto_line_selection(int p_begin_line, int p_begin_column, int p_end_line, int p_end_column);
 	void trim_trailing_whitespace();
 	void trim_final_newlines();
 	void tag_saved_version();

@@ -176,32 +176,61 @@ void RegEx::clear() {
 	}
 }
 
-Error RegEx::compile(const String &p_pattern, bool p_show_error) {
+static void *_compile_regex(void *const &general_ctx, const String &p_pattern, const uint32_t &flags, int &err, PCRE2_SIZE &offset) {
+	pcre2_general_context_32 *gctx = (pcre2_general_context_32 *)general_ctx;
+	pcre2_compile_context_32 *cctx = pcre2_compile_context_create_32(gctx);
+	PCRE2_SPTR32 p = (PCRE2_SPTR32)p_pattern.get_data();
+
+	void *compile_code = pcre2_compile_32(p, p_pattern.length(), flags, &err, &offset, cctx);
+
+	pcre2_compile_context_free_32(cctx);
+	return compile_code;
+}
+
+static String _get_formatted_pcre_error(int &err, PCRE2_SIZE &offset) {
+	PCRE2_UCHAR32 buf[256];
+	pcre2_get_error_message_32(err, buf, 256);
+	return String::num_int64(offset) + ": " + String((const char32_t *)buf);
+}
+
+Error RegEx::compile(const String &p_pattern, bool p_show_error, bool p_caseless) {
 	pattern = p_pattern;
 	clear();
 
 	int err;
 	PCRE2_SIZE offset;
 	uint32_t flags = PCRE2_DUPNAMES;
+	if (p_caseless) {
+		flags |= PCRE2_CASELESS;
+	}
+	if (code) {
+		pcre2_code_free_32((pcre2_code_32 *)code);
+		code = nullptr;
+	}
 
-	pcre2_general_context_32 *gctx = (pcre2_general_context_32 *)general_ctx;
-	pcre2_compile_context_32 *cctx = pcre2_compile_context_create_32(gctx);
-	PCRE2_SPTR32 p = (PCRE2_SPTR32)pattern.get_data();
-
-	code = pcre2_compile_32(p, pattern.length(), flags, &err, &offset, cctx);
-
-	pcre2_compile_context_free_32(cctx);
+	code = _compile_regex(general_ctx, pattern, flags, err, offset);
 
 	if (!code) {
 		if (p_show_error) {
-			PCRE2_UCHAR32 buf[256];
-			pcre2_get_error_message_32(err, buf, 256);
-			String message = String::num_int64(offset) + ": " + String((const char32_t *)buf);
-			ERR_PRINT(message);
+			ERR_PRINT(_get_formatted_pcre_error(err, offset));
 		}
 		return FAILED;
 	}
 	return OK;
+}
+
+String RegEx::get_compile_error() const {
+	int err;
+	PCRE2_SIZE offset;
+	uint32_t flags = PCRE2_DUPNAMES;
+
+	void *compile_code = _compile_regex(general_ctx, pattern, flags, err, offset);
+	if (compile_code) {
+		pcre2_code_free_32((pcre2_code_32 *)compile_code);
+		return "";
+	} else {
+		return _get_formatted_pcre_error(err, offset);
+	}
 }
 
 Ref<RegExMatch> RegEx::search(const String &p_subject, int p_offset, int p_end) const {
@@ -332,13 +361,16 @@ int RegEx::_sub(const String &p_subject, const String &p_replacement, int p_offs
 	return res;
 }
 
-String RegEx::sub(const String &p_subject, const String &p_replacement, bool p_all, int p_offset, int p_end) const {
+String RegEx::sub(const String &p_subject, const String &p_replacement, bool p_all, int p_offset, int p_end, bool p_extended) const {
 	ERR_FAIL_COND_V(!is_valid(), String());
 	ERR_FAIL_COND_V_MSG(p_offset < 0, String(), "RegEx sub offset must be >= 0");
 
 	uint32_t flags = PCRE2_SUBSTITUTE_OVERFLOW_LENGTH | PCRE2_SUBSTITUTE_UNSET_EMPTY;
 	if (p_all) {
 		flags |= PCRE2_SUBSTITUTE_GLOBAL;
+	}
+	if (p_extended) {
+		flags |= PCRE2_SUBSTITUTE_EXTENDED;
 	}
 
 	String output;
@@ -420,10 +452,11 @@ void RegEx::_bind_methods() {
 	ClassDB::bind_static_method("RegEx", D_METHOD("create_from_string", "pattern", "show_error"), &RegEx::create_from_string, DEFVAL(true));
 
 	ClassDB::bind_method(D_METHOD("clear"), &RegEx::clear);
-	ClassDB::bind_method(D_METHOD("compile", "pattern", "show_error"), &RegEx::compile, DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("compile", "pattern", "show_error", "caseless"), &RegEx::compile, DEFVAL(true), DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("get_compile_error"), &RegEx::get_compile_error);
 	ClassDB::bind_method(D_METHOD("search", "subject", "offset", "end"), &RegEx::search, DEFVAL(0), DEFVAL(-1));
 	ClassDB::bind_method(D_METHOD("search_all", "subject", "offset", "end"), &RegEx::search_all, DEFVAL(0), DEFVAL(-1));
-	ClassDB::bind_method(D_METHOD("sub", "subject", "replacement", "all", "offset", "end"), &RegEx::sub, DEFVAL(false), DEFVAL(0), DEFVAL(-1));
+	ClassDB::bind_method(D_METHOD("sub", "subject", "replacement", "all", "offset", "end", "extended"), &RegEx::sub, DEFVAL(true), DEFVAL(0), DEFVAL(-1), DEFVAL(false));
 	ClassDB::bind_method(D_METHOD("is_valid"), &RegEx::is_valid);
 	ClassDB::bind_method(D_METHOD("get_pattern"), &RegEx::get_pattern);
 	ClassDB::bind_method(D_METHOD("get_group_count"), &RegEx::get_group_count);

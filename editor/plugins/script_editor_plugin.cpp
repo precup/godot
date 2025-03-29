@@ -3940,7 +3940,7 @@ void ScriptEditor::_on_replace_in_files_requested(const String &text) {
 	find_in_files_dialog->popup_centered();
 }
 
-void ScriptEditor::_on_find_in_files_result_selected(const String &fpath, int line_number, int begin, int end) {
+void ScriptEditor::_on_find_in_files_result_selected(const String &fpath, int begin_line, int begin_column, int end_line, int end_column) {
 	if (ResourceLoader::exists(fpath)) {
 		Ref<Resource> res = ResourceLoader::load(fpath);
 
@@ -3950,7 +3950,7 @@ void ScriptEditor::_on_find_in_files_result_selected(const String &fpath, int li
 			shader_editor->make_visible(true);
 			TextShaderEditor *text_shader_editor = Object::cast_to<TextShaderEditor>(shader_editor->get_shader_editor(res));
 			if (text_shader_editor) {
-				text_shader_editor->goto_line_selection(line_number - 1, begin, end);
+				text_shader_editor->goto_line_selection(begin_line - 1, begin_column, end_line - 1, end_column);
 			}
 			return;
 		} else if (fpath.get_extension() == "tscn") {
@@ -3994,13 +3994,14 @@ void ScriptEditor::_on_find_in_files_result_selected(const String &fpath, int li
 
 				} while (!f->eof_reached());
 
-				if (line_number > scr_start_line + scr_line_count) {
+				if (begin_line > scr_start_line + scr_line_count) {
 					// Find in another built-in GDScript.
 					continue;
 				}
 
 				// Real line number of the built-in script.
-				line_number = line_number - scr_start_line;
+				begin_line = begin_line - scr_start_line;
+				end_line = end_line - scr_start_line;
 
 				is_script_found = true;
 				break;
@@ -4016,7 +4017,7 @@ void ScriptEditor::_on_find_in_files_result_selected(const String &fpath, int li
 
 					if (ste) {
 						EditorInterface::get_singleton()->set_main_screen_editor("Script");
-						ste->goto_line_selection(line_number, begin, end);
+						ste->goto_line_selection(begin_line - 1, begin_column, end_line - 1, end_column);
 					}
 				}
 			}
@@ -4031,7 +4032,7 @@ void ScriptEditor::_on_find_in_files_result_selected(const String &fpath, int li
 				ScriptTextEditor *ste = Object::cast_to<ScriptTextEditor>(_get_current_editor());
 				if (ste) {
 					EditorInterface::get_singleton()->set_main_screen_editor("Script");
-					ste->goto_line_selection(line_number - 1, begin, end);
+					ste->goto_line_selection(begin_line - 1, begin_column, end_line - 1, end_column);
 				}
 				return;
 			}
@@ -4046,7 +4047,7 @@ void ScriptEditor::_on_find_in_files_result_selected(const String &fpath, int li
 
 		TextEditor *te = Object::cast_to<TextEditor>(_get_current_editor());
 		if (te) {
-			te->goto_line_selection(line_number - 1, begin, end);
+			te->goto_line_selection(begin_line - 1, begin_column, end_line - 1, end_column);
 		}
 	}
 }
@@ -4057,6 +4058,7 @@ void ScriptEditor::_start_find_in_files(bool with_replace) {
 	f->set_search_text(find_in_files_dialog->get_search_text());
 	f->set_match_case(find_in_files_dialog->is_match_case());
 	f->set_whole_words(find_in_files_dialog->is_whole_words());
+	f->set_regex(find_in_files_dialog->is_regex());
 	f->set_folder(find_in_files_dialog->get_folder());
 	f->set_filter(find_in_files_dialog->get_filter());
 

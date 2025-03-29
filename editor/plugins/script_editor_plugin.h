@@ -524,7 +524,7 @@ class ScriptEditor : public PanelContainer {
 
 	void _on_find_in_files_requested(const String &text);
 	void _on_replace_in_files_requested(const String &text);
-	void _on_find_in_files_result_selected(const String &fpath, int line_number, int begin, int end);
+	void _on_find_in_files_result_selected(const String &fpath, int begin_line, int begin_column, int end_line, int end_column);
 	void _start_find_in_files(bool with_replace);
 	void _on_find_in_files_modified_files(const PackedStringArray &paths);
 	void _on_find_in_files_close_button_clicked();

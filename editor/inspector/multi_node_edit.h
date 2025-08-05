@@ -74,8 +74,12 @@ public:
 		if (get_node_count() != p_other->get_node_count()) {
 			return false;
 		}
+		HashMap<NodePath, bool> nodes_in_selection;
 		for (int i = 0; i < get_node_count(); i++) {
-			if (!nodes.has(p_other->get_node(i))) {
+			nodes_in_selection[p_other->get_node(i)] = true;
+		}
+		for (const NodePath &node : nodes) {
+			if (!nodes_in_selection.has(node)) {
 				return false;
 			}
 		}

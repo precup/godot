@@ -271,9 +271,12 @@ void EditorNode3DGizmo::_update_bvh() {
 		}
 	}
 
-	Node3DEditor::get_singleton()->update_gizmo_bvh_node(
-			bvh_node_id,
-			aabb);
+	if (last_aabb != aabb) {
+		last_aabb = aabb;
+		Node3DEditor::get_singleton()->update_gizmo_bvh_node(
+				bvh_node_id,
+				aabb);
+	}
 }
 
 void EditorNode3DGizmo::add_lines(const Vector<Vector3> &p_lines, const Ref<Material> &p_material, bool p_billboard, const Color &p_modulate) {
@@ -804,9 +807,8 @@ void EditorNode3DGizmo::create() {
 		instances.write[i].create_instance(spatial_node, hidden);
 	}
 
-	bvh_node_id = Node3DEditor::get_singleton()->insert_gizmo_bvh_node(
-			spatial_node,
-			AABB(spatial_node->get_position(), Vector3(0, 0, 0)));
+	last_aabb = AABB(spatial_node->get_position(), Vector3(0, 0, 0));
+	bvh_node_id = Node3DEditor::get_singleton()->insert_gizmo_bvh_node(spatial_node, last_aabb);
 
 	transform();
 }

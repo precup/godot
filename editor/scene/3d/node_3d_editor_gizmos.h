@@ -72,6 +72,7 @@ class EditorNode3DGizmo : public Node3DGizmo {
 	Node3D *spatial_node = nullptr;
 
 	DynamicBVH::ID bvh_node_id;
+	AABB last_aabb;
 
 	void _set_node_3d(Node *p_node) { set_node_3d(Object::cast_to<Node3D>(p_node)); }
 

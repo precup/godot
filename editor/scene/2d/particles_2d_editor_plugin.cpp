@@ -235,31 +235,35 @@ void Particles2DEditorPlugin::_selection_changed() {
 		return;
 	}
 
-	// Turn gizmos off for nodes that are no longer selected.
-	for (List<Node *>::Element *E = selected_particles.front(); E;) {
-		Node *node = E->get();
-		List<Node *>::Element *N = E->next();
-		if (current_selection.find(node) == nullptr) {
-			_set_show_gizmos(node, false);
-			selected_particles.erase(E);
+	// Turn gizmos on for nodes that are newly selected.
+	HashMap<Node *, bool> nodes_in_current_selection;
+	for (Node *node : current_selection) {
+		nodes_in_current_selection[node] = true;
+		if (!selected_particles.has(node)) {
+			_set_show_gizmos(node, true);
+			selected_particles[node] = true;
 		}
-		E = N;
 	}
 
-	// Turn gizmos on for nodes that are newly selected.
-	for (Node *node : current_selection) {
-		if (selected_particles.find(node) == nullptr) {
-			_set_show_gizmos(node, true);
-			selected_particles.push_back(node);
+	// Turn gizmos off for nodes that are no longer selected.
+	LocalVector<Node *> to_erase;
+	for (const KeyValue<Node *, bool> &E : selected_particles) {
+		Node *node = E.key;
+		if (!nodes_in_current_selection.has(node)) {
+			_set_show_gizmos(node, false);
+			to_erase.push_back(node);
 		}
+	}
+
+	for (Node *node : to_erase) {
+		selected_particles.erase(node);
 	}
 }
 
 void Particles2DEditorPlugin::_node_removed(Node *p_node) {
-	List<Node *>::Element *E = selected_particles.find(p_node);
-	if (E) {
-		_set_show_gizmos(E->get(), false);
-		selected_particles.erase(E);
+	if (selected_particles.has(p_node)) {
+		_set_show_gizmos(p_node, false);
+		selected_particles.erase(p_node);
 	}
 }
 

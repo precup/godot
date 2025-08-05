@@ -706,7 +706,12 @@ void SceneTreeEditor::_node_visibility_changed(Node *p_node) {
 		return;
 	}
 
-	TreeItem *item = _find(tree->get_root(), p_node->get_path());
+	TreeItem *item;
+	if (I->value.item && I->value.item->get_metadata(0) == p_node->get_path()) {
+		item = I->value.item;
+	} else {
+		item = _find(tree->get_root(), p_node->get_path());
+	}
 
 	if (!item) {
 		return;
@@ -1022,6 +1027,8 @@ bool SceneTreeEditor::_update_filter(TreeItem *p_parent, bool p_scroll_to_select
 	for (TreeItem *child = p_parent->get_first_child(); child; child = child->get_next()) {
 		// Always keep if at least one of the children are kept.
 		keep_for_children = _update_filter(child, p_scroll_to_selected) || keep_for_children;
+		// No need to scroll away from whatever we just scrolled to.
+		p_scroll_to_selected &= !keep_for_children;
 	}
 
 	if (!is_root) {
@@ -1312,9 +1319,15 @@ void SceneTreeEditor::_cell_multi_selected(Object *p_object, int p_cell, bool p_
 	}
 
 	// Emitted "selected" in _selected_changed() when select single node, so select multiple node emit "changed".
-	if (editor_selection->get_selected_nodes().size() > 1) {
-		emit_signal(SNAME("node_changed"));
+	if (editor_selection->get_selection().size() > 1 && !pending_selection_update) {
+		pending_selection_update = true;
+		callable_mp(this, &SceneTreeEditor::_process_selection_update).call_deferred();
 	}
+}
+
+void SceneTreeEditor::_process_selection_update() {
+	pending_selection_update = false;
+	emit_signal(SNAME("node_changed"));
 }
 
 void SceneTreeEditor::_tree_scroll_to_item(ObjectID p_item_id) {

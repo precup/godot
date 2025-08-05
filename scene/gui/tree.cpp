@@ -891,6 +891,10 @@ TreeItem *TreeItem::create_child(int p_index) {
 		item_prev = last_child;
 	} else {
 		int idx = 0;
+		if (!children_cache.is_empty()) {
+			idx = MIN(children_cache.size() - 1, p_index);
+			item_next = children_cache[idx];
+		}
 		while (item_next) {
 			if (idx == p_index) {
 				item_next->prev = ti;
@@ -917,9 +921,7 @@ TreeItem *TreeItem::create_child(int p_index) {
 		}
 	} else {
 		first_child = ti;
-		if (!children_cache.is_empty()) {
-			children_cache.insert(0, ti);
-		}
+		children_cache.insert(0, ti);
 	}
 
 	if (item_prev == last_child) {
@@ -2912,6 +2914,7 @@ void Tree::select_single_item(TreeItem *p_selected, TreeItem *p_current, int p_c
 
 	bool emitted_row = false;
 
+	LocalVector<Pair<int, bool>> batched_emission_args;
 	for (int i = 0; i < columns.size(); i++) {
 		TreeItem::Cell &c = p_current->cells.write[i];
 
@@ -2962,17 +2965,21 @@ void Tree::select_single_item(TreeItem *p_selected, TreeItem *p_current, int p_c
 				if (r_in_range && *r_in_range && !p_force_deselect) {
 					if (!c.selected && c.selectable) {
 						c.selected = true;
-						emit_signal(SNAME("multi_selected"), p_current, i, true);
+						batched_emission_args.push_back(Pair<int, bool>(i, true));
 					}
 
 				} else if (!r_in_range || p_force_deselect) {
 					if (select_mode == SELECT_MULTI && c.selected) {
-						emit_signal(SNAME("multi_selected"), p_current, i, false);
+						batched_emission_args.push_back(Pair<int, bool>(i, false));
 					}
 					c.selected = false;
 				}
 			}
 		}
+	}
+
+	for (const Pair<int, bool> &emission_args : batched_emission_args) {
+		emit_signal(SNAME("multi_selected"), p_current, emission_args.first, emission_args.second);
 	}
 
 	if (!switched && r_in_range && *r_in_range && (p_current == p_selected || p_current == p_prev)) {
@@ -4069,6 +4076,8 @@ void Tree::gui_input(const Ref<InputEvent> &p_event) {
 				if (current_item == cache.click_item && current_column == cache.click_column && current_index == cache.click_index) {
 					emit_signal("button_clicked", cache.click_item, cache.click_column, cache.click_id, mb->get_button_index());
 				}
+			} else {
+				queue_redraw();
 			}
 
 			cache.click_type = Cache::CLICK_NONE;
@@ -4076,7 +4085,6 @@ void Tree::gui_input(const Ref<InputEvent> &p_event) {
 			cache.click_id = -1;
 			cache.click_item = nullptr;
 			cache.click_column = 0;
-			queue_redraw();
 			return;
 		}
 

@@ -2464,6 +2464,7 @@ Control *Control::find_next_valid_focus() const {
 			return nullptr; // Stuck in a loop with no next control.
 		}
 
+		print_line(next_child);
 		from = next_child; // Try to find the next control with focus mode FOCUS_ALL.
 	}
 
@@ -2526,8 +2527,11 @@ Control *Control::find_prev_valid_focus() const {
 						continue;
 					}
 					window_prev = prev;
-					prev_child = _prev_control(c);
-					break;
+					Control *possible_next_child = _prev_control(c);
+					if (possible_next_child != c) {
+						prev_child = possible_next_child;
+						break;
+					}
 				}
 			}
 

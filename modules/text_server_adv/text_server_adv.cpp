@@ -4255,7 +4255,13 @@ bool TextServerAdvanced::_font_is_script_supported(const RID &p_font_rid, const 
 		Vector2i size = _get_size(fd, 16);
 		FontForSizeAdvanced *ffsd = nullptr;
 		ERR_FAIL_COND_V(!_ensure_cache_for_size(fd, size, ffsd), false);
-		return fd->supported_scripts.has(hb_tag_from_string(p_script.ascii().get_data(), -1));
+		char ascii_script[] = { ' ', ' ', ' ', ' ' };
+		for (int i = 0; i < MIN(4, p_script.size()); i++) {
+			if (p_script[i] <= 0x7f) {
+				ascii_script[i] = p_script[i];
+			}
+		}
+		return fd->supported_scripts.has(hb_tag_from_string(ascii_script, -1));
 	}
 }
 
@@ -5274,6 +5280,11 @@ bool TextServerAdvanced::_shape_substr(ShapedTextDataAdvanced *p_new_sd, const S
 				int32_t bidi_run_start = _convert_pos(p_sd, ov_start + start + _bidi_run_start);
 				int32_t bidi_run_end = _convert_pos(p_sd, ov_start + start + _bidi_run_start + _bidi_run_length);
 
+				int cached_font_size;
+				RID cached_font_rid;
+				double cached_font_ascent;
+				double cached_font_descent;
+				p_new_sd->glyphs.reserve(p_new_sd->glyphs.size() + MIN(sd_size, bidi_run_end - bidi_run_start));
 				for (int j = 0; j < sd_size; j++) {
 					int col_key_off = (sd_glyphs[j].start == sd_glyphs[j].end) ? 1 : 0;
 					if ((sd_glyphs[j].start >= bidi_run_start) && (sd_glyphs[j].end <= bidi_run_end - col_key_off)) {
@@ -5326,8 +5337,14 @@ bool TextServerAdvanced::_shape_substr(ShapedTextDataAdvanced *p_new_sd, const S
 						} else {
 							if (gl.font_rid.is_valid()) {
 								if (p_new_sd->orientation == ORIENTATION_HORIZONTAL) {
-									p_new_sd->ascent = MAX(p_new_sd->ascent, MAX(_font_get_ascent(gl.font_rid, gl.font_size) + _font_get_spacing(gl.font_rid, SPACING_TOP), -gl.y_off));
-									p_new_sd->descent = MAX(p_new_sd->descent, MAX(_font_get_descent(gl.font_rid, gl.font_size) + _font_get_spacing(gl.font_rid, SPACING_BOTTOM), gl.y_off));
+									if (cached_font_rid != gl.font_rid || cached_font_size != gl.font_size) {
+										cached_font_rid = gl.font_rid;
+										cached_font_size = gl.font_size;
+										cached_font_ascent = _font_get_ascent(gl.font_rid, gl.font_size);
+										cached_font_descent = _font_get_descent(gl.font_rid, gl.font_size);
+									}
+									p_new_sd->ascent = MAX(p_new_sd->ascent, MAX(cached_font_ascent + _font_get_spacing(gl.font_rid, SPACING_TOP), -gl.y_off));
+									p_new_sd->descent = MAX(p_new_sd->descent, MAX(cached_font_descent + _font_get_spacing(gl.font_rid, SPACING_BOTTOM), gl.y_off));
 								} else {
 									p_new_sd->ascent = MAX(p_new_sd->ascent, Math::round(_font_get_glyph_advance(gl.font_rid, gl.font_size, gl.index).x * 0.5));
 									p_new_sd->descent = MAX(p_new_sd->descent, Math::round(_font_get_glyph_advance(gl.font_rid, gl.font_size, gl.index).x * 0.5));
@@ -6906,6 +6923,7 @@ void TextServerAdvanced::_shape_run(ShapedTextDataAdvanced *p_sd, int64_t p_star
 					failed_subrun_start = p_end + 1;
 					failed_subrun_end = p_start;
 				}
+				p_sd->glyphs.reserve(p_sd->glyphs.size() + w[i].count);
 				for (int j = 0; j < w[i].count; j++) {
 					if (p_sd->orientation == ORIENTATION_HORIZONTAL) {
 						p_sd->ascent = MAX(p_sd->ascent, -w[i + j].y_off);
@@ -7155,22 +7173,22 @@ bool TextServerAdvanced::_shaped_text_shape(const RID &p_shaped) {
 							Array fonts_no_match;
 							int font_count = span.fonts.size();
 							if (font_count > 0) {
-								fonts.push_back(sd->spans[k].fonts[0]);
+								fonts.push_back(span.fonts[0]);
 							}
 							for (int l = 1; l < font_count; l++) {
 								if (_font_is_script_supported(span.fonts[l], script_code)) {
 									if (_font_is_language_supported(span.fonts[l], span.language)) {
-										fonts.push_back(sd->spans[k].fonts[l]);
+										fonts.push_back(span.fonts[l]);
 									} else {
-										fonts_scr_only.push_back(sd->spans[k].fonts[l]);
+										fonts_scr_only.push_back(span.fonts[l]);
 									}
 								} else {
-									fonts_no_match.push_back(sd->spans[k].fonts[l]);
+									fonts_no_match.push_back(span.fonts[l]);
 								}
 							}
 							fonts.append_array(fonts_scr_only);
 							fonts.append_array(fonts_no_match);
-							_shape_run(sd, MAX(sd->spans[k].start - sd->start, script_run_start), MIN(sd->spans[k].end - sd->start, script_run_end), sd->script_iter->script_ranges[j].script, bidi_run_direction, fonts, k, 0, 0, 0, RID());
+							_shape_run(sd, MAX(span.start - sd->start, script_run_start), MIN(span.end - sd->start, script_run_end), sd->script_iter->script_ranges[j].script, bidi_run_direction, fonts, k, 0, 0, 0, RID());
 						}
 					}
 				}

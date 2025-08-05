@@ -386,6 +386,9 @@ bool TextParagraph::get_preserve_control() const {
 void TextParagraph::set_direction(TextServer::Direction p_direction) {
 	_THREAD_SAFE_METHOD_
 
+	if (TS->shaped_text_get_direction(rid) == p_direction) {
+		return;
+	}
 	TS->shaped_text_set_direction(rid, p_direction);
 	TS->shaped_text_set_direction(dropcap_rid, p_direction);
 	lines_dirty = true;

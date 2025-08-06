@@ -1443,16 +1443,43 @@ void Object::get_signal_connection_list(const StringName &p_signal, List<Connect
 	}
 }
 
-int Object::get_persistent_signal_connection_count() const {
+int Object::get_persistent_signal_connection_count(const StringName *p_signal, const Callable *p_callable) const {
 	OBJ_SIGNAL_LOCK
 	int count = 0;
 
-	for (const KeyValue<StringName, SignalData> &E : signal_map) {
-		const SignalData *s = &E.value;
-
-		for (const KeyValue<Callable, SignalData::Slot> &slot_kv : s->slot_map) {
-			if (slot_kv.value.conn.flags & CONNECT_PERSIST) {
+	if (p_signal) {
+		if (!signal_map.has(*p_signal)) {
+			return 0;
+		}
+		const SignalData *signal_data = signal_map.getptr(*p_signal);
+		if (p_callable) {
+			if (!signal_data->slot_map.has(*p_callable)) {
+				return 0;
+			}
+			const SignalData::Slot *slot_data = signal_data->slot_map.getptr(*p_callable);
+			return slot_data->conn.flags & CONNECT_PERSIST ? 1 : 0;
+		} else {
+			for (const KeyValue<Callable, SignalData::Slot> &slot_kv : signal_data->slot_map) {
+				if (slot_kv.value.conn.flags & CONNECT_PERSIST) {
+					count += 1;
+				}
+			}
+		}
+	} else if (p_callable) {
+		for (const KeyValue<StringName, SignalData> &E : signal_map) {
+			const SignalData *s = &E.value;
+			if (s->slot_map.has(*p_callable) && s->slot_map.getptr(*p_callable)->conn.flags & CONNECT_PERSIST) {
 				count += 1;
+			}
+		}
+	} else {
+		for (const KeyValue<StringName, SignalData> &E : signal_map) {
+			const SignalData *s = &E.value;
+
+			for (const KeyValue<Callable, SignalData::Slot> &slot_kv : s->slot_map) {
+				if (slot_kv.value.conn.flags & CONNECT_PERSIST) {
+					count += 1;
+				}
 			}
 		}
 	}

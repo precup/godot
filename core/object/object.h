@@ -659,6 +659,7 @@ private:
 	void _set_indexed_bind(const NodePath &p_name, const Variant &p_value);
 	Variant _get_indexed_bind(const NodePath &p_name) const;
 	int _get_method_argument_count_bind(const StringName &p_name) const;
+	static int _get_persistent_signal_connection_count(const SignalData *p_signal_data, const Callable *p_callable);
 
 	_FORCE_INLINE_ void _construct_object(bool p_reference);
 
@@ -946,7 +947,7 @@ public:
 	MTVIRTUAL void get_signal_list(List<MethodInfo> *p_signals) const;
 	MTVIRTUAL void get_signal_connection_list(const StringName &p_signal, List<Connection> *p_connections) const;
 	MTVIRTUAL void get_all_signal_connections(List<Connection> *p_connections) const;
-	MTVIRTUAL int get_persistent_signal_connection_count() const;
+	MTVIRTUAL int get_persistent_signal_connection_count(const StringName *p_signal = nullptr, const Callable *p_callable = nullptr) const;
 	MTVIRTUAL void get_signals_connected_to_this(List<Connection> *p_connections) const;
 
 	MTVIRTUAL Error connect(const StringName &p_signal, const Callable &p_callable, uint32_t p_flags = 0);

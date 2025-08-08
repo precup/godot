@@ -1443,20 +1443,36 @@ void Object::get_signal_connection_list(const StringName &p_signal, List<Connect
 	}
 }
 
-int Object::get_persistent_signal_connection_count() const {
-	OBJ_SIGNAL_LOCK
+int Object::_get_persistent_signal_connection_count(const SignalData *p_signal_data, const Callable *p_callable) {
 	int count = 0;
-
-	for (const KeyValue<StringName, SignalData> &E : signal_map) {
-		const SignalData *s = &E.value;
-
-		for (const KeyValue<Callable, SignalData::Slot> &slot_kv : s->slot_map) {
+	if (p_callable) {
+		const SignalData::Slot *slot_data = p_signal_data->slot_map.getptr(*p_callable);
+		if (slot_data && slot_data->conn.flags & CONNECT_PERSIST) {
+			count++;
+		}
+	} else {
+		for (const KeyValue<Callable, SignalData::Slot> &slot_kv : p_signal_data->slot_map) {
 			if (slot_kv.value.conn.flags & CONNECT_PERSIST) {
-				count += 1;
+				count++;
 			}
 		}
 	}
+	return count;
+}
 
+int Object::get_persistent_signal_connection_count(const StringName *p_signal, const Callable *p_callable) const {
+	OBJ_SIGNAL_LOCK
+	int count = 0;
+	if (p_signal) {
+		const SignalData *signal_data = signal_map.getptr(*p_signal);
+		if (signal_data) {
+			count += _get_persistent_signal_connection_count(signal_data, p_callable);
+		}
+	} else {
+		for (const KeyValue<StringName, SignalData> &E : signal_map) {
+			count += _get_persistent_signal_connection_count(&E.value, p_callable);
+		}
+	}
 	return count;
 }
 

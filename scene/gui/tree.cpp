@@ -2916,6 +2916,7 @@ void Tree::select_single_item(TreeItem *p_selected, TreeItem *p_current, int p_c
 
 	bool emitted_row = false;
 
+	LocalVector<Pair<int, bool>> batched_emission_args;
 	for (int i = 0; i < columns.size(); i++) {
 		TreeItem::Cell &c = p_current->cells.write[i];
 
@@ -2966,17 +2967,21 @@ void Tree::select_single_item(TreeItem *p_selected, TreeItem *p_current, int p_c
 				if (r_in_range && *r_in_range && !p_force_deselect) {
 					if (!c.selected && c.selectable) {
 						c.selected = true;
-						emit_signal(SNAME("multi_selected"), p_current, i, true);
+						batched_emission_args.push_back(Pair<int, bool>(i, true));
 					}
 
 				} else if (!r_in_range || p_force_deselect) {
 					if (select_mode == SELECT_MULTI && c.selected) {
-						emit_signal(SNAME("multi_selected"), p_current, i, false);
+						batched_emission_args.push_back(Pair<int, bool>(i, false));
 					}
 					c.selected = false;
 				}
 			}
 		}
+	}
+
+	for (const Pair<int, bool> &emission_args : batched_emission_args) {
+		emit_signal(SNAME("multi_selected"), p_current, emission_args.first, emission_args.second);
 	}
 
 	if (!switched && r_in_range && *r_in_range && (p_current == p_selected || p_current == p_prev)) {

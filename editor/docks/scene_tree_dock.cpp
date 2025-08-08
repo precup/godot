@@ -3363,12 +3363,12 @@ void SceneTreeDock::set_edited_scene(Node *p_scene) {
 	edited_scene = p_scene;
 }
 
-static bool _is_same_selection(const Vector<Node *> &p_first, const List<Node *> &p_second) {
+static bool _is_same_selection(const Vector<Node *> &p_first, const HashMap<Node *, Object *> &p_second) {
 	if (p_first.size() != p_second.size()) {
 		return false;
 	}
-	for (Node *node : p_second) {
-		if (!p_first.has(node)) {
+	for (Node *node : p_first) {
+		if (!p_second.has(node)) {
 			return false;
 		}
 	}

@@ -832,8 +832,12 @@ List<CanvasItem *> CanvasItemEditor::_get_edited_canvas_items(bool p_retrieve_lo
 
 	if (p_remove_canvas_item_if_parent_in_selection) {
 		List<CanvasItem *> filtered_selection;
+		HashSet<Node *> nodes_in_selection;
 		for (CanvasItem *E : selection) {
-			if (!selection.find(E->get_parent())) {
+			nodes_in_selection.insert(E);
+		}
+		for (CanvasItem *E : selection) {
+			if (!nodes_in_selection.has(E->get_parent())) {
 				filtered_selection.push_back(E);
 			}
 		}

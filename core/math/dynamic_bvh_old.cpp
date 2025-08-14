@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  dynamic_bvh.cpp                                                       */
+/*  dynamic_bvh_old.cpp                                                   */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,13 +28,13 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "dynamic_bvh.h"
+#include "dynamic_bvh_old.h"
 
-void DynamicBVH::_delete_node(Node *p_node) {
+void DynamicBVHOld::_delete_node(Node *p_node) {
 	node_allocator.free(p_node);
 }
 
-void DynamicBVH::_recurse_delete_node(Node *p_node) {
+void DynamicBVHOld::_recurse_delete_node(Node *p_node) {
 	if (!p_node->is_leaf()) {
 		_recurse_delete_node(p_node->children[0]);
 		_recurse_delete_node(p_node->children[1]);
@@ -45,20 +45,20 @@ void DynamicBVH::_recurse_delete_node(Node *p_node) {
 	_delete_node(p_node);
 }
 
-DynamicBVH::Node *DynamicBVH::_create_node(Node *p_parent, void *p_data) {
+DynamicBVHOld::Node *DynamicBVHOld::_create_node(Node *p_parent, void *p_data) {
 	Node *node = node_allocator.alloc();
 	node->parent = p_parent;
 	node->data = p_data;
 	return (node);
 }
 
-DynamicBVH::Node *DynamicBVH::_create_node_with_volume(Node *p_parent, const Volume &p_volume, void *p_data) {
+DynamicBVHOld::Node *DynamicBVHOld::_create_node_with_volume(Node *p_parent, const Volume &p_volume, void *p_data) {
 	Node *node = _create_node(p_parent, p_data);
 	node->volume = p_volume;
 	return node;
 }
 
-void DynamicBVH::_insert_leaf(Node *p_root, Node *p_leaf) {
+void DynamicBVHOld::_insert_leaf(Node *p_root, Node *p_leaf) {
 	if (!bvh_root) {
 		bvh_root = p_leaf;
 		p_leaf->parent = nullptr;
@@ -67,8 +67,7 @@ void DynamicBVH::_insert_leaf(Node *p_root, Node *p_leaf) {
 			do {
 				p_root = p_root->children[p_leaf->volume.select_by_proximity(
 						p_root->children[0]->volume,
-						p_root->children[1]->volume,
-						tiebreaker)];
+						p_root->children[1]->volume)];
 			} while (!p_root->is_leaf());
 		}
 		Node *prev = p_root->parent;
@@ -97,7 +96,7 @@ void DynamicBVH::_insert_leaf(Node *p_root, Node *p_leaf) {
 	}
 }
 
-DynamicBVH::Node *DynamicBVH::_remove_leaf(Node *leaf) {
+DynamicBVHOld::Node *DynamicBVHOld::_remove_leaf(Node *leaf) {
 	if (leaf == bvh_root) {
 		bvh_root = nullptr;
 		return (nullptr);
@@ -128,7 +127,7 @@ DynamicBVH::Node *DynamicBVH::_remove_leaf(Node *leaf) {
 	}
 }
 
-void DynamicBVH::_fetch_leaves(Node *p_root, LocalVector<Node *> &r_leaves, int p_depth) {
+void DynamicBVHOld::_fetch_leaves(Node *p_root, LocalVector<Node *> &r_leaves, int p_depth) {
 	if (p_root->is_internal() && p_depth) {
 		_fetch_leaves(p_root->children[0], r_leaves, p_depth - 1);
 		_fetch_leaves(p_root->children[1], r_leaves, p_depth - 1);
@@ -141,7 +140,7 @@ void DynamicBVH::_fetch_leaves(Node *p_root, LocalVector<Node *> &r_leaves, int 
 // Partitions leaves such that leaves[0, n) are on the
 // left of axis, and leaves[n, count) are on the right
 // of axis. returns N.
-int DynamicBVH::_split(Node **leaves, int p_count, const Vector3 &p_org, const Vector3 &p_axis) {
+int DynamicBVHOld::_split(Node **leaves, int p_count, const Vector3 &p_org, const Vector3 &p_axis) {
 	int begin = 0;
 	int end = p_count;
 	for (;;) {
@@ -172,7 +171,7 @@ int DynamicBVH::_split(Node **leaves, int p_count, const Vector3 &p_org, const V
 	return begin;
 }
 
-DynamicBVH::Volume DynamicBVH::_bounds(Node **leaves, int p_count) {
+DynamicBVHOld::Volume DynamicBVHOld::_bounds(Node **leaves, int p_count) {
 	Volume volume = leaves[0]->volume;
 	for (int i = 1, ni = p_count; i < ni; ++i) {
 		volume = volume.merge(leaves[i]->volume);
@@ -180,7 +179,7 @@ DynamicBVH::Volume DynamicBVH::_bounds(Node **leaves, int p_count) {
 	return (volume);
 }
 
-void DynamicBVH::_bottom_up(Node **leaves, int p_count) {
+void DynamicBVHOld::_bottom_up(Node **leaves, int p_count) {
 	while (p_count > 1) {
 		real_t minsize = Math::INF;
 		int minidx[2] = { -1, -1 };
@@ -206,7 +205,7 @@ void DynamicBVH::_bottom_up(Node **leaves, int p_count) {
 	}
 }
 
-DynamicBVH::Node *DynamicBVH::_top_down(Node **leaves, int p_count, int p_bu_threshold) {
+DynamicBVHOld::Node *DynamicBVHOld::_top_down(Node **leaves, int p_count, int p_bu_threshold) {
 	static const Vector3 axis[] = { Vector3(1, 0, 0), Vector3(0, 1, 0), Vector3(0, 0, 1) };
 
 	ERR_FAIL_COND_V(p_bu_threshold <= 1, nullptr);
@@ -255,7 +254,7 @@ DynamicBVH::Node *DynamicBVH::_top_down(Node **leaves, int p_count, int p_bu_thr
 	return (leaves[0]);
 }
 
-DynamicBVH::Node *DynamicBVH::_node_sort(Node *n, Node *&r) {
+DynamicBVHOld::Node *DynamicBVHOld::_node_sort(Node *n, Node *&r) {
 	Node *p = n->parent;
 	ERR_FAIL_COND_V(!n->is_internal(), nullptr);
 	if (p > n) {
@@ -284,7 +283,7 @@ DynamicBVH::Node *DynamicBVH::_node_sort(Node *n, Node *&r) {
 	return (n);
 }
 
-void DynamicBVH::clear() {
+void DynamicBVHOld::clear() {
 	if (bvh_root) {
 		_recurse_delete_node(bvh_root);
 	}
@@ -292,7 +291,7 @@ void DynamicBVH::clear() {
 	opath = 0;
 }
 
-void DynamicBVH::optimize_bottom_up() {
+void DynamicBVHOld::optimize_bottom_up() {
 	if (bvh_root) {
 		LocalVector<Node *> leaves;
 		_fetch_leaves(bvh_root, leaves);
@@ -301,7 +300,7 @@ void DynamicBVH::optimize_bottom_up() {
 	}
 }
 
-void DynamicBVH::optimize_top_down(int bu_threshold) {
+void DynamicBVHOld::optimize_top_down(int bu_threshold) {
 	if (bvh_root) {
 		LocalVector<Node *> leaves;
 		_fetch_leaves(bvh_root, leaves);
@@ -309,7 +308,7 @@ void DynamicBVH::optimize_top_down(int bu_threshold) {
 	}
 }
 
-void DynamicBVH::optimize_incremental(int passes) {
+void DynamicBVHOld::optimize_incremental(int passes) {
 	if (passes < 0) {
 		passes = total_leaves;
 	}
@@ -330,7 +329,7 @@ void DynamicBVH::optimize_incremental(int passes) {
 	}
 }
 
-DynamicBVH::ID DynamicBVH::insert(const AABB &p_box, void *p_userdata) {
+DynamicBVHOld::ID DynamicBVHOld::insert(const AABB &p_box, void *p_userdata) {
 	Volume volume;
 	volume.min = p_box.position;
 	volume.max = p_box.position + p_box.size;
@@ -345,7 +344,7 @@ DynamicBVH::ID DynamicBVH::insert(const AABB &p_box, void *p_userdata) {
 	return id;
 }
 
-void DynamicBVH::_update(Node *leaf, int lookahead) {
+void DynamicBVHOld::_update(Node *leaf, int lookahead) {
 	Node *root = _remove_leaf(leaf);
 	if (root) {
 		if (lookahead >= 0) {
@@ -359,7 +358,7 @@ void DynamicBVH::_update(Node *leaf, int lookahead) {
 	_insert_leaf(root, leaf);
 }
 
-bool DynamicBVH::update(const ID &p_id, const AABB &p_box) {
+bool DynamicBVHOld::update(const ID &p_id, const AABB &p_box) {
 	ERR_FAIL_COND_V(!p_id.is_valid(), false);
 	Node *leaf = p_id.node;
 
@@ -387,7 +386,7 @@ bool DynamicBVH::update(const ID &p_id, const AABB &p_box) {
 	return true;
 }
 
-void DynamicBVH::remove(const ID &p_id) {
+void DynamicBVHOld::remove(const ID &p_id) {
 	ERR_FAIL_COND(!p_id.is_valid());
 	Node *leaf = p_id.node;
 	_remove_leaf(leaf);
@@ -395,7 +394,7 @@ void DynamicBVH::remove(const ID &p_id) {
 	--total_leaves;
 }
 
-void DynamicBVH::_extract_leaves(Node *p_node, List<ID> *r_elements) {
+void DynamicBVHOld::_extract_leaves(Node *p_node, List<ID> *r_elements) {
 	if (p_node->is_internal()) {
 		_extract_leaves(p_node->children[0], r_elements);
 		_extract_leaves(p_node->children[1], r_elements);
@@ -406,25 +405,25 @@ void DynamicBVH::_extract_leaves(Node *p_node, List<ID> *r_elements) {
 	}
 }
 
-void DynamicBVH::set_index(uint32_t p_index) {
+void DynamicBVHOld::set_index(uint32_t p_index) {
 	ERR_FAIL_COND(bvh_root != nullptr);
 	index = p_index;
 }
 
-uint32_t DynamicBVH::get_index() const {
+uint32_t DynamicBVHOld::get_index() const {
 	return index;
 }
 
-void DynamicBVH::get_elements(List<ID> *r_elements) {
+void DynamicBVHOld::get_elements(List<ID> *r_elements) {
 	if (bvh_root) {
 		_extract_leaves(bvh_root, r_elements);
 	}
 }
 
-int DynamicBVH::get_leaf_count() const {
+int DynamicBVHOld::get_leaf_count() const {
 	return total_leaves;
 }
-int DynamicBVH::get_max_depth() const {
+int DynamicBVHOld::get_max_depth() const {
 	if (bvh_root) {
 		int depth = 1;
 		int max_depth = 0;
@@ -435,6 +434,6 @@ int DynamicBVH::get_max_depth() const {
 	}
 }
 
-DynamicBVH::~DynamicBVH() {
+DynamicBVHOld::~DynamicBVHOld() {
 	clear();
 }

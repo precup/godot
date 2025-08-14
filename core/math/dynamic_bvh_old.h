@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  dynamic_bvh.h                                                         */
+/*  dynamic_bvh_old.h                                                     */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -53,10 +53,10 @@ subject to the following restrictions:
 3. This notice may not be removed or altered from any source distribution.
 */
 
-///DynamicBVH implementation by Nathanael Presson
-// The DynamicBVH class implements a fast dynamic bounding volume tree based on axis aligned bounding boxes (aabb tree).
+///DynamicBVHOld implementation by Nathanael Presson
+// The DynamicBVHOld class implements a fast dynamic bounding volume tree based on axis aligned bounding boxes (aabb tree).
 
-class DynamicBVH {
+class DynamicBVHOld {
 	struct Node;
 
 public:
@@ -120,14 +120,8 @@ private:
 			return (Math::abs(d.x) + Math::abs(d.y) + Math::abs(d.z));
 		}
 
-		_FORCE_INLINE_ int select_by_proximity(const Volume &a, const Volume &b, uint32_t &tiebreaker) const {
-			real_t prox_a = get_proximity_to(a);
-			real_t prox_b = get_proximity_to(b);
-			if (prox_a == prox_b) {
-				tiebreaker *= 1664525U;
-				return (tiebreaker % 48271U) & 1;
-			}
-			return prox_a < prox_b ? 0 : 1;
+		_FORCE_INLINE_ int select_by_proximity(const Volume &a, const Volume &b) const {
+			return (get_proximity_to(a) < get_proximity_to(b) ? 0 : 1);
 		}
 
 		//
@@ -233,7 +227,6 @@ private:
 	int total_leaves = 0;
 	uint32_t opath = 0;
 	uint32_t index = 0;
-	uint32_t tiebreaker = 134775813U;
 
 	enum {
 		ALLOCA_STACK_SIZE = 128
@@ -242,7 +235,7 @@ private:
 	_FORCE_INLINE_ void _delete_node(Node *p_node);
 	void _recurse_delete_node(Node *p_node);
 	_FORCE_INLINE_ Node *_create_node(Node *p_parent, void *p_data);
-	_FORCE_INLINE_ DynamicBVH::Node *_create_node_with_volume(Node *p_parent, const Volume &p_volume, void *p_data);
+	_FORCE_INLINE_ DynamicBVHOld::Node *_create_node_with_volume(Node *p_parent, const Volume &p_volume, void *p_data);
 	_FORCE_INLINE_ void _insert_leaf(Node *p_root, Node *p_leaf);
 	_FORCE_INLINE_ Node *_remove_leaf(Node *leaf);
 	void _fetch_leaves(Node *p_root, LocalVector<Node *> &r_leaves, int p_depth = -1);
@@ -321,11 +314,11 @@ public:
 	void set_index(uint32_t p_index);
 	uint32_t get_index() const;
 
-	~DynamicBVH();
+	~DynamicBVHOld();
 };
 
 template <typename QueryResult>
-void DynamicBVH::aabb_query(const AABB &p_box, QueryResult &r_result) {
+void DynamicBVHOld::aabb_query(const AABB &p_box, QueryResult &r_result) {
 	if (!bvh_root) {
 		return;
 	}
@@ -370,7 +363,7 @@ void DynamicBVH::aabb_query(const AABB &p_box, QueryResult &r_result) {
 }
 
 template <typename QueryResult>
-void DynamicBVH::convex_query(const Plane *p_planes, int p_plane_count, const Vector3 *p_points, int p_point_count, QueryResult &r_result) {
+void DynamicBVHOld::convex_query(const Plane *p_planes, int p_plane_count, const Vector3 *p_points, int p_point_count, QueryResult &r_result) {
 	if (!bvh_root) {
 		return;
 	}
@@ -422,7 +415,7 @@ void DynamicBVH::convex_query(const Plane *p_planes, int p_plane_count, const Ve
 	} while (depth > 0);
 }
 template <typename QueryResult>
-void DynamicBVH::ray_query(const Vector3 &p_from, const Vector3 &p_to, QueryResult &r_result) {
+void DynamicBVHOld::ray_query(const Vector3 &p_from, const Vector3 &p_to, QueryResult &r_result) {
 	if (!bvh_root) {
 		return;
 	}

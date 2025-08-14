@@ -33,6 +33,7 @@
 #include "core/config/project_settings.h"
 #include "core/input/input.h"
 #include "core/io/resource_saver.h"
+#include "core/math/dynamic_bvh_old.h"
 #include "core/object/class_db.h"
 #include "core/os/keyboard.h"
 #include "editor/animation/animation_player_editor_plugin.h"
@@ -1602,11 +1603,66 @@ void SceneTreeDock::add_root_node(Node *p_node) {
 	undo_redo->commit_action();
 }
 
+static int seed = 606755437U;
+
+static int randint() {
+	seed = seed * 1664525U + 1013904223U;
+	return seed;
+}
+
+static AABB random_aabb() {
+	return AABB(Vector3(randint(), randint(), randint()), Vector3(0.5, 0.5, 0.5));
+}
+
+template <int NODE_COUNT, typename BVH>
+static void run_benchmark(String name, int trials, int dups_before, int dups_after) {
+	seed = 606755437U;
+	int total_time = 0;
+	for (int t = 0; t < trials; t++) {
+		AABB aabbs[NODE_COUNT];
+		aabbs[0] = random_aabb();
+		aabbs[NODE_COUNT - 1] = random_aabb();
+		for (int b = 0; b < dups_before && b < NODE_COUNT - 1; b++) {
+			aabbs[b + 1] = aabbs[0];
+		}
+		for (int a = 0; a < dups_after && NODE_COUNT - 2 - a >= 0; a++) {
+			aabbs[NODE_COUNT - 2 - a] = aabbs[NODE_COUNT - 1];
+		}
+		for (int n = dups_before + 1; n < NODE_COUNT - dups_after - 1; n++) {
+			aabbs[n] = random_aabb();
+		}
+
+		BVH bvh;
+		int start_time = OS::get_singleton()->get_ticks_usec();
+		for (int n = 0; n < NODE_COUNT; n++) {
+			bvh.insert(aabbs[n], nullptr);
+		}
+		total_time += OS::get_singleton()->get_ticks_usec() - start_time;
+	}
+	print_line(name, ": ", total_time);
+}
+
+template <typename BVH>
+static void run_benchmarks(String name) {
+	const int TRIALS = 1000;
+	const int NODES = 25000;
+	run_benchmark<NODES, BVH>(name + " Testing no duplicates", TRIALS, 0, 0);
+	// run_benchmark<NODES, BVH>(name + " Testing all duplicates", TRIALS, NODES, 0);
+	// run_benchmark<NODES, BVH>(name + " Testing half duplicates (before random)", TRIALS, NODES / 2, 0);
+	// run_benchmark<NODES, BVH>(name + " Testing half duplicates (after random)", TRIALS, 0, NODES / 2);
+	// run_benchmark<NODES, BVH>(name + " Testing 10% duplicates (half before, half after)", TRIALS, NODES / 20, NODES / 20);
+}
+
 void SceneTreeDock::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_READY: {
 			if (!first_enter) {
 				break;
+			}
+			print_line("Running benchmarks");
+			while (true) {
+				run_benchmarks<DynamicBVHOld>(String("OLD"));
+				run_benchmarks<DynamicBVH>(String("NEW"));
 			}
 			first_enter = false;
 
